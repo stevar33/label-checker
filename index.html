@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>原料標籤三欄位連續自動檢核</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; background: #111; color: #fff; margin: 0; padding: 10px; }
+        h3 { margin: 5px 0; font-size: 18px; }
+        .config-box { background: #333; padding: 10px; border-radius: 8px; margin-bottom: 10px; text-align: left; }
+        label { font-size: 14px; color: #ccc; }
+        input { padding: 6px; width: calc(100% - 14px); margin-top: 2px; margin-bottom: 6px; font-size: 15px; }
+        video, canvas { width: 100%; max-width: 400px; border-radius: 8px; border: 2px solid #555; display: block; margin: 0 auto; }
+        #status { font-size: 20px; font-weight: bold; margin-top: 10px; padding: 12px; border-radius: 8px; }
+        .pass { background-color: #2e7d32; color: #fff; }
+        .fail { background-color: #c62828; color: #fff; }
+        .scanning { background-color: #455a64; color: #fff; }
+    </style>
+    <!-- 引入 Tesseract.js 用於文字辨識 (OCR) -->
+    <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
+</head>
+<body>
+
+    <h3>原料標籤三欄位自動檢核</h3>
+    
+    <!-- 設定當批次的標準資料 -->
+    <div class="config-box">
+        <label>預期批號 (Lot No.):</label>
+        <input type="text" id="targetLot" value="ST40-2601">
+        
+        <label>預期製造日期 (Mfg. Date):</label>
+        <input type="text" id="targetMfg" value="2026.10.13">
+        
+        <label>預期重驗日期 (Retesting Date):</label>
+        <input type="text" id="targetRetest" value="2031.10.12">
+    </div>
+
+    <!-- 手機相機畫面 -->
+    <div>
+        <video id="video" autoplay playsinline muted></video>
+        <!-- 隱藏的 canvas 用來擷取畫面進行辨識 -->
+        <canvas id="canvas" style="display:none;"></canvas>
+    </div>
+
+    <div id="status" class="scanning">鏡頭對準標籤中，請等待自動辨識...</div>
+    <div id="counter" style="margin-top: 8px; font-size: 16px; color: #aaa;">已連續通過張數: <span id="passCount">0</span></div>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const statusDiv = document.getElementById('status');
+        const passCountSpan = document.getElementById('passCount');
+
+        let isProcessing = false;
+        let successCount = 0;
+        let lastPassedText = ""; // 避免同一張重複計數
+
+        // 自動啟動手機後鏡頭
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+            .then(stream => { 
+                video.srcObject = stream;
+                video.play();
+                // 每 1.5 秒自動擷取辨識一次
+                setInterval(scanLoop, 1500); 
+            })
+            .catch(err => { alert("無法開啟相機: " + err); });
+
+        async function scanLoop() {
+            if (isProcessing) return; 
+            if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
+
+            isProcessing = true;
+
+            try {
+                // 將當前影片畫面繪製到 canvas
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                const imageDataUrl = canvas.toDataURL('image/jpeg');
+
+                // 取得畫面上輸入的三個預期值
+                const targetLot = document.getElementById('targetLot').value.trim();
+                const targetMfg = document.getElementById('targetMfg').value.trim();
+                const targetRetest = document.getElementById('targetRetest').value.trim();
+
+                // 執行 OCR 辨識
+                const { data: { text } } = await Tesseract.recognize(imageDataUrl, 'eng');
+
+                // 同時檢查是否三個欄位都有出現在辨識文字中
+                const hasLot = text.includes(targetLot);
+                const hasMfg = text.includes(targetMfg);
+                const hasRetest = text.includes(targetRetest);
+
+                if (hasLot && hasMfg && hasRetest) {
+                    statusDiv.className = "pass";
+                    statusDiv.innerText = `✅ PASS！三項皆正確\n(批號: ${targetLot})`;
+                    
+                    // 如果跟上一張不同張，計數加 1
+                    if (text !== lastPassedText) {
+                        successCount++;
+                        passCountSpan.innerText = successCount;
+                        lastPassedText = text;
+                        // 觸發手機震動提示
+                        if (navigator.vibrate) navigator.vibrate(200);
+                    }
+                } else {
+                    // 顯示目前缺少的項目，方便即時掌握
+                    let missing = [];
+                    if (!hasLot) missing.push("批號");
+                    if (!hasMfg) missing.push("製造日期");
+                    if (!hasRetest) missing.push("重驗日期");
+
+                    statusDiv.className = "fail";
+                    statusDiv.innerText = `⏳ 尋找中... 尚未對齊\n(未完整抓到: ${missing.join(', ')})`;
+                }
+            } catch (err) {
+                console.log("辨識中...");
+            } finally {
+                isProcessing = false;
+            }
+        }
+    </script>
+</body>
+</html>
