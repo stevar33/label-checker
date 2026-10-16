@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>原料標籤自動檢核 (全畫面辨識)</title>
+    <title>原料標籤自動檢核 (高精準版)</title>
     <style>
         body { font-family: sans-serif; text-align: center; background: #111; color: #fff; margin: 0; padding: 10px; }
         h3 { margin: 5px 0; font-size: 18px; }
@@ -95,7 +95,6 @@
             isProcessing = true;
 
             try {
-                // 直接抓取完整畫面進行辨識
                 canvas.width = video.videoWidth;
                 canvas.height = video.videoHeight;
                 const ctx = canvas.getContext('2d');
@@ -107,8 +106,14 @@
                 const targetMfg = document.getElementById('targetMfg').value.trim();
                 const targetRetest = document.getElementById('targetRetest').value.trim();
 
-                // 執行全畫面 OCR 辨識
-                const { data: { text } } = await Tesseract.recognize(imageDataUrl, 'eng');
+                // 執行 OCR 辨識，並加入字元白名單以大幅提高英數字辨識準確率
+                const { data: { text } } = await Tesseract.recognize(
+                    imageDataUrl, 
+                    'eng',
+                    {
+                        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.- '
+                    }
+                );
 
                 const hasLot = text.includes(targetLot);
                 const hasMfg = text.includes(targetMfg);
