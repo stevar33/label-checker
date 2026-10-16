@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>原料標籤自動檢核 (手動輸入版)</title>
+    <title>原料標籤自動檢核 (具體錯誤提示)</title>
     <style>
         body { font-family: sans-serif; text-align: center; background: #111; color: #fff; margin: 0; padding: 10px; }
         h3 { margin: 5px 0; font-size: 18px; }
@@ -11,7 +11,7 @@
         label { font-size: 14px; color: #ccc; }
         input { padding: 8px; width: calc(100% - 18px); margin-top: 2px; margin-bottom: 8px; font-size: 16px; background: #222; color: #fff; border: 1px solid #555; border-radius: 4px; }
         video, canvas { width: 100%; max-width: 400px; border-radius: 8px; border: 2px solid #555; display: block; margin: 0 auto; }
-        #status { font-size: 20px; font-weight: bold; margin-top: 10px; padding: 12px; border-radius: 8px; }
+        #status { font-size: 18px; font-weight: bold; margin-top: 10px; padding: 12px; border-radius: 8px; white-space: pre-line; }
         .pass { background-color: #2e7d32; color: #fff; }
         .fail { background-color: #c62828; color: #fff; }
         .scanning { background-color: #455a64; color: #fff; }
@@ -23,7 +23,7 @@
 
     <h3>原料標籤自動檢核</h3>
     
-    <!-- 供使用者自行填入的標準資料欄位 (初始皆為空白) -->
+    <!-- 供使用者自行填入的標準資料欄位 -->
     <div class="config-box">
         <label>預期批號 (Lot No.):</label>
         <input type="text" id="targetLot" placeholder="請輸入批號 (例如: ST40-2601)">
@@ -71,7 +71,7 @@
                 osc.start();
                 osc.stop(audioCtx.currentTime + 0.15); 
             } else {
-                osc.frequency.value = 300; 
+                osc.frequency.value = 300; // 低音警告
                 gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
                 osc.start();
                 osc.stop(audioCtx.currentTime + 0.4); 
@@ -81,6 +81,7 @@
         // 自動啟動手機後鏡頭
         navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
             .then(stream => { 
+                video.srcStatus = stream;
                 video.srcObject = stream;
                 video.play();
                 // 每 1 秒自動掃描一次
@@ -92,12 +93,10 @@
             if (isProcessing) return; 
             if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
 
-            // 取得使用者輸入的目標值
             const targetLot = document.getElementById('targetLot').value.trim();
             const targetMfg = document.getElementById('targetMfg').value.trim();
             const targetRetest = document.getElementById('targetRetest').value.trim();
 
-            // 若有任何一個欄位尚未填寫，則暫停自動掃描提示
             if (!targetLot || !targetMfg || !targetRetest) {
                 statusDiv.className = "scanning";
                 statusDiv.innerText = "⚠️ 請先於上方完整填入三項檢核資料";
@@ -114,7 +113,6 @@
 
                 const imageDataUrl = canvas.toDataURL('image/jpeg');
 
-                // 執行 OCR 辨識，並加入字元白名單以提高準確率
                 const { data: { text } } = await Tesseract.recognize(
                     imageDataUrl, 
                     'eng',
@@ -128,6 +126,7 @@
                 const hasRetest = text.includes(targetRetest);
 
                 if (hasLot && hasMfg && hasRetest) {
+                    // 三項皆正確
                     statusDiv.className = "pass";
                     statusDiv.innerText = `✅ PASS！三項皆正確\n(批號: ${targetLot})`;
                     
@@ -140,8 +139,17 @@
                         if (navigator.vibrate) navigator.vibrate(200);
                     }
                 } else {
+                    // 有項目不吻合或遺漏，列出具體錯誤/缺少項目
+                    let missingItems = [];
+                    if (!hasLot) missingItems.push("❌ 批號 (Lot No.) 不符或未抓到");
+                    if (!hasMfg) missingItems.push("❌ 製造日期 (Mfg.) 不符或未抓到");
+                    if (!hasRetest) missingItems.push("❌ 重驗日期 (Retest) 不符或未抓到");
+
                     statusDiv.className = "fail";
-                    statusDiv.innerText = `⏳ 尋找中... 請對準標籤`;
+                    statusDiv.innerText = `⚠️ 檢核未通過 (FAIL)\n` + missingItems.join("\n");
+                    
+                    // 可選擇是否在每次失敗時短震動提醒（若怕干擾可註解掉下面這行）
+                    // if (navigator.vibrate) navigator.vibrate(100);
                 }
             } catch (err) {
                 console.log("辨識中...");
