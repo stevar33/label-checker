@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>原料標籤自動檢核 (高精準版)</title>
+    <title>原料標籤自動檢核 (手動輸入版)</title>
     <style>
         body { font-family: sans-serif; text-align: center; background: #111; color: #fff; margin: 0; padding: 10px; }
         h3 { margin: 5px 0; font-size: 18px; }
         .config-box { background: #333; padding: 10px; border-radius: 8px; margin-bottom: 10px; text-align: left; }
         label { font-size: 14px; color: #ccc; }
-        input { padding: 6px; width: calc(100% - 14px); margin-top: 2px; margin-bottom: 6px; font-size: 15px; }
+        input { padding: 8px; width: calc(100% - 18px); margin-top: 2px; margin-bottom: 8px; font-size: 16px; background: #222; color: #fff; border: 1px solid #555; border-radius: 4px; }
         video, canvas { width: 100%; max-width: 400px; border-radius: 8px; border: 2px solid #555; display: block; margin: 0 auto; }
         #status { font-size: 20px; font-weight: bold; margin-top: 10px; padding: 12px; border-radius: 8px; }
         .pass { background-color: #2e7d32; color: #fff; }
@@ -23,16 +23,16 @@
 
     <h3>原料標籤自動檢核</h3>
     
-    <!-- 設定當批次的標準資料 -->
+    <!-- 供使用者自行填入的標準資料欄位 (初始皆為空白) -->
     <div class="config-box">
         <label>預期批號 (Lot No.):</label>
-        <input type="text" id="targetLot" value="ST40-2601">
+        <input type="text" id="targetLot" placeholder="請輸入批號 (例如: ST40-2601)">
         
         <label>預期製造日期 (Mfg. Date):</label>
-        <input type="text" id="targetMfg" value="2026.10.13">
+        <input type="text" id="targetMfg" placeholder="請輸入製造日期 (例如: 2026.10.13)">
         
         <label>預期重驗日期 (Retesting Date):</label>
-        <input type="text" id="targetRetest" value="2031.10.12">
+        <input type="text" id="targetRetest" placeholder="請輸入重驗日期 (例如: 2031.10.12)">
     </div>
 
     <!-- 手機相機畫面 -->
@@ -41,7 +41,7 @@
         <canvas id="canvas" style="display:none;"></canvas>
     </div>
 
-    <div id="status" class="scanning">請將鏡頭對準標籤...</div>
+    <div id="status" class="scanning">請先填寫上方檢核資料並對準標籤...</div>
     <div id="counter" style="margin-top: 8px; font-size: 16px; color: #aaa;">已連續通過張數: <span id="passCount">0</span></div>
 
     <script>
@@ -92,6 +92,18 @@
             if (isProcessing) return; 
             if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
 
+            // 取得使用者輸入的目標值
+            const targetLot = document.getElementById('targetLot').value.trim();
+            const targetMfg = document.getElementById('targetMfg').value.trim();
+            const targetRetest = document.getElementById('targetRetest').value.trim();
+
+            // 若有任何一個欄位尚未填寫，則暫停自動掃描提示
+            if (!targetLot || !targetMfg || !targetRetest) {
+                statusDiv.className = "scanning";
+                statusDiv.innerText = "⚠️ 請先於上方完整填入三項檢核資料";
+                return;
+            }
+
             isProcessing = true;
 
             try {
@@ -102,11 +114,7 @@
 
                 const imageDataUrl = canvas.toDataURL('image/jpeg');
 
-                const targetLot = document.getElementById('targetLot').value.trim();
-                const targetMfg = document.getElementById('targetMfg').value.trim();
-                const targetRetest = document.getElementById('targetRetest').value.trim();
-
-                // 執行 OCR 辨識，並加入字元白名單以大幅提高英數字辨識準確率
+                // 執行 OCR 辨識，並加入字元白名單以提高準確率
                 const { data: { text } } = await Tesseract.recognize(
                     imageDataUrl, 
                     'eng',
