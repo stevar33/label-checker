@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>原料標籤高速自動檢核</title>
+    <title>原料標籤自動檢核 (附提示音)</title>
     <style>
         body { font-family: sans-serif; text-align: center; background: #111; color: #fff; margin: 0; padding: 10px; }
         h3 { margin: 5px 0; font-size: 18px; }
@@ -21,7 +21,7 @@
 </head>
 <body>
 
-    <h3>原料標籤高速自動檢核</h3>
+    <h3>原料標籤自動檢核 (附提示音)</h3>
     
     <!-- 設定當批次的標準資料 -->
     <div class="config-box">
@@ -41,7 +41,7 @@
         <canvas id="canvas" style="display:none;"></canvas>
     </div>
 
-    <div id="status" class="scanning">請將鏡頭對準標籤右下角...</div>
+    <div id="status" class="scanning">鏡頭對準標籤中，請等待自動辨識...</div>
     <div id="counter" style="margin-top: 8px; font-size: 16px; color: #aaa;">已連續通過張數: <span id="passCount">0</span></div>
 
     <script>
@@ -54,7 +54,7 @@
         let successCount = 0;
         let lastPassedText = ""; 
 
-        // 建立音效物件 (發出提示嗶聲)
+        // 建立網頁音效物件 (使用瀏覽器內建音訊振盪器發出嗶聲)
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         function playBeep(type) {
             if (audioCtx.state === 'suspended') {
@@ -66,12 +66,12 @@
             gain.connect(audioCtx.destination);
 
             if (type === 'success') {
-                osc.frequency.value = 880; // 高音成功提示
+                osc.frequency.value = 880; // 高音 (La)
                 gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
                 osc.start();
-                osc.stop(audioCtx.currentTime + 0.15); 
+                osc.stop(audioCtx.currentTime + 0.15); // 嗶 0.2 秒
             } else {
-                osc.frequency.value = 300; 
+                osc.frequency.value = 300; // 低音警告
                 gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
                 osc.start();
                 osc.stop(audioCtx.currentTime + 0.4); 
@@ -83,8 +83,7 @@
             .then(stream => { 
                 video.srcObject = stream;
                 video.play();
-                // 縮短掃描間隔至 1 秒，大幅提升流暢度
-                setInterval(scanLoop, 1000); 
+                setInterval(scanLoop, 1500); // 每 1.0 秒自動掃描一次
             })
             .catch(err => { alert("無法開啟相機: " + err); });
 
@@ -95,34 +94,17 @@
             isProcessing = true;
 
             try {
-                const videoWidth = video.videoWidth;
-                const videoHeight = video.videoHeight;
-
-                canvas.width = videoWidth;
-                canvas.height = videoHeight;
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
                 const ctx = canvas.getContext('2d');
-                ctx.drawImage(video, 0, 0, videoWidth, videoHeight);
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-                // 局部裁切：只抓取標籤右下角（批號與日期所在區域）以加快辨識
-                const cropCanvas = document.createElement('canvas');
-                const cropCtx = cropCanvas.getContext('2d');
-                
-                const cropX = videoWidth * 0.35;
-                const cropY = videoWidth * 0.35; // 集中在畫面中下右側
-                const cropWidth = videoWidth * 0.65;
-                const cropHeight = videoHeight * 0.65;
-
-                cropCanvas.width = cropWidth;
-                cropCanvas.height = cropHeight;
-                
-                cropCtx.drawImage(canvas, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
-                const imageDataUrl = cropCanvas.toDataURL('image/jpeg');
+                const imageDataUrl = canvas.toDataURL('image/jpeg');
 
                 const targetLot = document.getElementById('targetLot').value.trim();
                 const targetMfg = document.getElementById('targetMfg').value.trim();
                 const targetRetest = document.getElementById('targetRetest').value.trim();
 
-                // 執行區域 OCR 辨識
                 const { data: { text } } = await Tesseract.recognize(imageDataUrl, 'eng');
 
                 const hasLot = text.includes(targetLot);
@@ -138,12 +120,13 @@
                         passCountSpan.innerText = successCount;
                         lastPassedText = text;
                         
+                        // 触发成功提示音與手機震動
                         playBeep('success');
                         if (navigator.vibrate) navigator.vibrate(200);
                     }
                 } else {
                     statusDiv.className = "fail";
-                    statusDiv.innerText = `⏳ 尋找中... 請對準標籤右下角`;
+                    statusDiv.innerText = `⏳ 尋找中... 請對準標籤`;
                 }
             } catch (err) {
                 console.log("辨識中...");
