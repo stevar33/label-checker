@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>原料標籤自動檢核 (具體錯誤提示)</title>
+    <title>原料標籤自動檢核 (高速辨識版)</title>
     <style>
         body { font-family: sans-serif; text-align: center; background: #111; color: #fff; margin: 0; padding: 10px; }
         h3 { margin: 5px 0; font-size: 18px; }
@@ -11,7 +11,7 @@
         label { font-size: 14px; color: #ccc; }
         input { padding: 8px; width: calc(100% - 18px); margin-top: 2px; margin-bottom: 8px; font-size: 16px; background: #222; color: #fff; border: 1px solid #555; border-radius: 4px; }
         video, canvas { width: 100%; max-width: 400px; border-radius: 8px; border: 2px solid #555; display: block; margin: 0 auto; }
-        #status { font-size: 18px; font-weight: bold; margin-top: 10px; padding: 12px; border-radius: 8px; white-space: pre-line; }
+        #status { font-size: 16px; font-weight: bold; margin-top: 10px; padding: 12px; border-radius: 8px; white-space: pre-line; line-height: 1.4; }
         .pass { background-color: #2e7d32; color: #fff; }
         .fail { background-color: #c62828; color: #fff; }
         .scanning { background-color: #455a64; color: #fff; }
@@ -53,10 +53,11 @@
         let isProcessing = false;
         let successCount = 0;
         let lastPassedText = ""; 
+        let lastFailText = ""; 
 
-        // 建立音效物件 (發出提示嗶聲)
+        // 建立音效物件 (發出提示嗶聲與警示音)
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        function playBeep(type) {
+        function playSound(type) {
             if (audioCtx.state === 'suspended') {
                 audioCtx.resume();
             }
@@ -66,26 +67,25 @@
             gain.connect(audioCtx.destination);
 
             if (type === 'success') {
-                osc.frequency.value = 880; // 高音成功提示
+                osc.frequency.value = 880; // 高音成功提示 (La)
                 gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
                 osc.start();
                 osc.stop(audioCtx.currentTime + 0.15); 
             } else {
-                osc.frequency.value = 300; // 低音警告
+                osc.frequency.value = 250; // 低音警告音
                 gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
                 osc.start();
-                osc.stop(audioCtx.currentTime + 0.4); 
+                osc.stop(audioCtx.currentTime + 0.3); 
             }
         }
 
         // 自動啟動手機後鏡頭
         navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
             .then(stream => { 
-                video.srcStatus = stream;
                 video.srcObject = stream;
                 video.play();
-                // 每 1 秒自動掃描一次
-                setInterval(scanLoop, 1000); 
+                // 調整掃描頻率為每 0.8 秒（800毫秒）自動掃描一次
+                setInterval(scanLoop, 800); 
             })
             .catch(err => { alert("無法開啟相機: " + err); });
 
@@ -126,7 +126,7 @@
                 const hasRetest = text.includes(targetRetest);
 
                 if (hasLot && hasMfg && hasRetest) {
-                    // 三項皆正確
+                    // 三項皆正確 (PASS)
                     statusDiv.className = "pass";
                     statusDiv.innerText = `✅ PASS！三項皆正確\n(批號: ${targetLot})`;
                     
@@ -134,12 +134,13 @@
                         successCount++;
                         passCountSpan.innerText = successCount;
                         lastPassedText = text;
+                        lastFailText = ""; 
                         
-                        playBeep('success');
+                        playSound('success');
                         if (navigator.vibrate) navigator.vibrate(200);
                     }
                 } else {
-                    // 有項目不吻合或遺漏，列出具體錯誤/缺少項目
+                    // 有項目不吻合或遺漏 (FAIL)
                     let missingItems = [];
                     if (!hasLot) missingItems.push("❌ 批號 (Lot No.) 不符或未抓到");
                     if (!hasMfg) missingItems.push("❌ 製造日期 (Mfg.) 不符或未抓到");
@@ -148,8 +149,12 @@
                     statusDiv.className = "fail";
                     statusDiv.innerText = `⚠️ 檢核未通過 (FAIL)\n` + missingItems.join("\n");
                     
-                    // 可選擇是否在每次失敗時短震動提醒（若怕干擾可註解掉下面這行）
-                    // if (navigator.vibrate) navigator.vibrate(100);
+                    let currentFailSignature = missingItems.join(",");
+                    if (currentFailSignature !== lastFailText) {
+                        lastFailText = currentFailSignature;
+                        playSound('fail');
+                        if (navigator.vibrate) navigator.vibrate([100, 50, 100]); 
+                    }
                 }
             } catch (err) {
                 console.log("辨識中...");
